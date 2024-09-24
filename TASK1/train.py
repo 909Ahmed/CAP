@@ -21,7 +21,8 @@ def train():
         
         "epochs" : 1,
         "world_size" : 1,
-        "save_path" : "save.pkl",
+        "save_path_phi" : "save_phi.pkl",
+        "save_path_" : "",
         "log_path" : "log.txt",
         "stage" : 1,
         "total_steps" : "1000",
@@ -38,7 +39,7 @@ def train():
     length = args['epochs'] * train_num // args['world_size']
     total_steps = args['epochs'] * train_num // batch_size
     args['total_steps'] = total_steps
-    agent = load_model(args)
+    agent = load_model(model, args)
 
     pbar = tqdm(total=length)  # maximum total number
     current_step = 0
@@ -54,6 +55,6 @@ def train():
             
             current_step += 1
             if current_step % 2000 == 0:
-                pickle.dump()
+                pickle.dump(args['save_path_phi'], )
                 
     pickle.dump()
