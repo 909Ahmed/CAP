@@ -26,8 +26,10 @@ def train():
         "log_path" : "log.txt",
         "stage" : 1,
         "total_steps" : "1000",
+        "warmup_rate": "0.1",
+        "max_length": "512",
         "ds_config_path" : "dataset.json"
-        
+                
     }
     
     phi_model = get_phi_model()
