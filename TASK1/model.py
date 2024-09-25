@@ -6,6 +6,62 @@ from transformers import AutoTokenizer
 import clip
 from torch.cuda.amp import autocast
 
+class MultiHead(nn.Module):
+
+    def __init__(self, emd_dim, d_model, head):
+        super(MultiHead, self).__init__()
+
+        self.d_model = d_model
+        self.head = head
+        self.qmat = nn.Linear(emd_dim, d_model)
+        self.kmat = nn.Linear(emd_dim, d_model)
+        self.vmat = nn.Linear(emd_dim, d_model)
+        self.omat = nn.Linear(d_model, emd_dim)
+
+    def make_heads(self, x):
+        return x.view(x.size()[0], x.size()[1], self.head, self.d_model // self.head).transpose(1, 2)
+
+    def forward(self, x):
+
+        q, k, v = self.qmat(x), self.kmat(x), self.vmat(x)
+        q, k, v = self.make_heads(q), self.make_heads(k), self.make_heads(v)
+
+        x = F.scaled_dot_product_attention(q, k, v)
+        x = x.transpose(1, 2).contiguous().view(x.size()[0], -1, self.d_model)
+
+        return self.omat(x)
+
+class MLP(nn.Module):
+    
+    def __init__(self, emd_dim):
+        super(MLP, self).__init__()
+        self.emd_dim = emd_dim
+        self.ff = nn.Sequential(
+            nn.Linear(self.emd_dim, self.emd_dim * 4),
+            nn.GELU(),
+            nn.Linear(self.emd_dim * 4, self.emd_dim)
+        )
+        
+    def forward(self, input_tensor): 
+        return self.ff(input_tensor)
+
+class BLOCK(nn.Module):
+
+    def __init__(self, emd_dim, d_model, heads):
+        super(BLOCK, self).__init__()
+
+        self.norm1 = nn.LayerNorm(emd_dim)
+        self.multihead = MultiHead(emd_dim, d_model, heads)
+        self.norm2 = nn.LayerNorm(emd_dim)
+        self.ff = MLP(emd_dim)
+
+    def forward(self, x):
+        
+        x = x + self.multihead(self.norm1(x))
+        x = x + self.ff(self.norm2(x))
+        
+        return x
+
 class ResBlocks(nn.Module):
     
     def __init__(self, inchannels, outchannels, num=1):
@@ -35,22 +91,31 @@ class Projection(nn.Module):
                  clip,
                  clip_embed=512,
                  phi_embed=3072,
-                 num_layers=6
+                 num_layers=2,
+                 num_attention_layers=4
         ):
         super(Projection, self).__init__()
         self.layers = nn.ModuleList([ResBlocks(clip_embed, phi_embed, i) for i in range(num_layers)])
+        self.attention_layers = nn.ModuleList([BLOCK(phi_embed, 2048, 8) for i in range(num_attention_layers)])
         self.clip = clip
         
     def forward(self, image):
         
         image = image.to('cuda')
         image = image.type(torch.float16)
+        
         with torch.no_grad(), autocast():
             x = self.clip.encode_image(image)
+
         x = x.type(torch.float16)
+        
         for layer in self.layers:
             x = layer(x)
-        return x.unsqueeze(1)
+        x = x.unsqueeze(1)
+        for layer in self.attention_layers:
+            x = layer(x)
+        
+        return x
 
 class DaVa(nn.Module):
     

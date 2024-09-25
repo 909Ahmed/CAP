@@ -11,9 +11,9 @@ def train_model():
     clipped, clippreprocess = clip.load("ViT-B/32", device='cuda')
     train_data = pickle.load(open('./task1/CAP/TASK1/dataset.pkl', 'rb'))
     train_dataset = DaVaDataset(train_data, clippreprocess)
-    batch_size = 2
+    batch_size = 16
     train_iter = torch.utils.data.DataLoader(train_dataset, 
-                                            num_workers=4,
+                                            num_workers=8,
                                             batch_size=batch_size, 
                                             shuffle=True,
                                             collate_fn=collate_fn)
@@ -32,7 +32,7 @@ def train_model():
         "ds_config_path" : "./task1/CAP/TASK1/dataset.json",
         "seed" : "13",
         "max_length": "512",
-        "logging_step" : "5"      
+        "logging_step" : "25"      
     }
     
     phi_model = get_phi_model()
@@ -59,13 +59,9 @@ def train_model():
             )
             
             current_step += 1
-            if current_step % 2000 == 0:
-                with open(args['save_path_phi'], 'wb') as phi_file:
-                    pickle.dump(agent.model.phi.state_dict(), phi_file)
-                with open(args['save_path_proj'], 'wb') as proj_file:
-                    pickle.dump(agent.model.proj.state_dict(), proj_file)
+            if current_step % 1000 == 0:
+                torch.save(agent.model.phi.state_dict(), args['save_path_phi'])
+                torch.save(agent.model.proj.state_dict(), args['save_path_proj'])
 
-    with open(args['save_path_phi'], 'wb') as phi_file:
-            pickle.dump(agent.model.phi.state_dict(), phi_file)
-    with open(args['save_path_proj'], 'wb') as proj_file:
-        pickle.dump(agent.model.proj.state_dict(), proj_file)
+    torch.save(agent.model.phi.state_dict(), args['save_path_phi'])
+    torch.save(agent.model.proj.state_dict(), args['save_path_proj'])

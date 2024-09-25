@@ -19,8 +19,12 @@ class DaVaDataset(Dataset):
         text = self.data[idx][1]
         image_url = self.data[idx][2]
         x = requests.get(image_url, stream=True)
-        image = Image.open(x.raw)
-        image = self.processor(image)
+        try:
+            image = Image.open(x.raw)
+            image = self.processor(image)
+        except:
+            image = torch.zeros((3, 224, 224))
+            print("shitty image")
 
         return {"images" : image, "captions" : text}
 
