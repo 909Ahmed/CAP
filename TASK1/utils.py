@@ -1,8 +1,8 @@
-import torch# type: ignore
+import torch
 import json
-from transformers import BitsAndBytesConfig, AutoModelForCausalLM # type: ignore
-from torch.utils.tensorboard import SummaryWriter# type: ignore
-import deepspeed# type: ignore
+from transformers import BitsAndBytesConfig, AutoModelForCausalLM
+from torch.utils.tensorboard import SummaryWriter
+import deepspeed
 import logging
 import types
 import datetime
@@ -37,14 +37,12 @@ class DeepSpeedAgent:
         self.args = args
         self.model = model
 
-        self.print_model_parameters()
         self.writer = SummaryWriter(args['log_path'])
         
         # load config parameters of deepspeed
         ds_params = json.load(open(self.args['ds_config_path']))
         ds_params['scheduler']['params']['total_num_steps'] = self.args['total_steps']
-        ds_params['scheduler']['params']['warmup_num_steps'] = max(10, int(
-            self.args['total_steps'] * self.args['warmup_rate']))
+        ds_params['scheduler']['params']['warmup_num_steps'] = max(10, int(int(self.args['total_steps']) * float(self.args['warmup_rate'])))
         self.ds_engine, self.optimizer, _, _ = deepspeed.initialize(
             model=self.model,
             model_parameters=self.model.parameters(),
@@ -60,14 +58,13 @@ class DeepSpeedAgent:
 
         self.writer.add_scalar('loss', loss, current_step)
         self.writer.add_scalar('mle_acc', mle_acc, current_step)
-        self.writer.add_scalar('mse_loss', mse_loss, current_step)
         
         self.ds_engine.backward(loss)
         self.ds_engine.step()
         # pbar.set_description(f'[!] loss: {round(loss.item(), 4)}; token_acc: {round(mle_acc * 100, 2)}; mse_loss: {round(mse_loss[0].item(), 4)} ')
         pbar.set_description(f'[!] loss: {round(loss.item(), 4)}; token_acc: {round(mle_acc * 100, 2)}')
         pbar.update(1)
-        if self.args['log_path'] and current_step % self.args['logging_step'] == 0:
+        if self.args['log_path'] and current_step % int(self.args['logging_step']) == 0:
             elapsed = pbar.format_dict['elapsed']
             rate = pbar.format_dict['rate']
             remaining = (pbar.total - pbar.n) / rate if rate and pbar.total else 0

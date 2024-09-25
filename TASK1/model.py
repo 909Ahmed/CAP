@@ -1,9 +1,10 @@
-import torch# type: ignore
-import torch.nn as nn# type: ignore
-import torch.nn.functional as F # type: ignore
-from torch.nn.utils import rnn # type: ignore
-from transformers import AutoTokenizer  # type: ignore
-import clip #type: ignore
+import torch
+import torch.nn as nn
+import torch.nn.functional as F 
+from torch.nn.utils import rnn
+from transformers import AutoTokenizer
+import clip
+from torch.cuda.amp import autocast
 
 class ResBlocks(nn.Module):
     
@@ -42,9 +43,11 @@ class Projection(nn.Module):
         
     def forward(self, image):
         
-        with torch.no_grad():
+        image = image.to('cuda')
+        image = image.type(torch.float16)
+        with torch.no_grad(), autocast():
             x = self.clip.encode_image(image)
-        x = x.type(torch.float32)
+        x = x.type(torch.float16)
         for layer in self.layers:
             x = layer(x)
         return x.unsqueeze(1)
@@ -69,12 +72,13 @@ class DaVa(nn.Module):
         self.num_layers=num_layers
         self.device = torch.device('cuda')        
 
-        clip, clippreprocess = clip.load("ViT-B/32", device='cuda')
+        clipped, clippreprocess = clip.load("ViT-B/32", device='cuda')
         self.clip = clip
         
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.phi = phi_model
-        self.proj = Projection(clip, self.clip_embed, self.phi_embed, self.num_layers).to(self.device)
+        self.proj = Projection(clipped, self.clip_embed, self.phi_embed, self.num_layers).to(self.device)
+
         self.tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-128k-instruct")
         self.max_length = 512
         
@@ -160,17 +164,18 @@ class DaVa(nn.Module):
         input_ids, target_ids, attention_mask = self.proces_batch(self.tokenizer, inputs['captions'])
         inputs_embeds, targets, attention_mask = self.prompt_wrap(image_embds, input_ids, target_ids, attention_mask)
         
-        inputs_embeds = inputs_embeds.type(torch.bfloat16)
-        # targets = targets.type(torch.bfloat16)
-        attention_mask = attention_mask.type(torch.bfloat16)
+        inputs_embeds = inputs_embeds.to(dtype=torch.bfloat16)
+        targets = targets.long()
+        attention_mask = attention_mask.to(dtype=torch.bfloat16)
 
-        outputs = self.phi(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            return_dict=True,
-            output_hidden_states=True,
-            labels=targets,
-        )
+        with autocast():
+            outputs = self.phi(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                return_dict=True,
+                output_hidden_states=True,
+                labels=targets,
+            )
 
         loss = outputs.loss
         # calculate the token accuracy
@@ -187,6 +192,7 @@ class DaVa(nn.Module):
         gen_acc = 0
         mse_loss = None
 
+        inputs['image'] = inputs['image'].requires_grad_()        
         if self.stage == 1:
             loss, gen_acc = self.align(inputs)
         else:

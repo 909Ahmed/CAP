@@ -1,8 +1,8 @@
-import torch # type: ignore
-import torch.nn as nn# type: ignore
+import torch 
+import torch.nn as nn
 import requests
-from transformers import CLIPModel, CLIPProcessor, AutoTokenizer# type: ignore
-from torch.utils.data import Dataset# type: ignore
+from transformers import AutoTokenizer
+from torch.utils.data import Dataset
 from PIL import Image
 
 class DaVaDataset(Dataset):
