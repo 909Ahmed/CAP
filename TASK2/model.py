@@ -6,6 +6,30 @@ from transformers import AutoTokenizer
 import clip
 from torch.cuda.amp import autocast
 
+class LoRALayer(nn.Module):
+    
+    def __init__(self, in_dim, out_dim, rank, alpha):
+        super().__init__()
+        std_dev = 1 / torch.sqrt(torch.tensor(rank).float())
+        self.A = torch.nn.Parameter(torch.randn(in_dim, rank) * std_dev).to('cuda')
+        self.B = torch.nn.Parameter(torch.zeros(rank, out_dim)).to('cuda')
+        self.alpha = alpha
+
+    def forward(self, x):
+        x = self.alpha * (x @ self.A @ self.B)
+        return x
+
+class LoRA(torch.nn.Module):
+    
+    def __init__(self, linear, rank, alpha):
+        super().__init__()
+        
+        self.linear = linear
+        self.lora = LoRALayer(linear.in_features, linear.out_features, rank, alpha)
+    
+    def forward(self, x):
+        return self.linear(x) + self.lora(x)
+
 class MultiHead(nn.Module):
 
     def __init__(self, emd_dim, d_model, head):
@@ -251,12 +275,48 @@ class DaVa(nn.Module):
         valid_tokens = gen_acc & valid_mask  # [B*S]
         gen_acc = valid_tokens.sum().item() / (valid_mask.sum().item() + 1.0)
         return loss, gen_acc
+
+    def build_prompt_tune(self, tokenizer, conversation):
     
-    def process_batch_qa(self, tokenizer, answers, questions):
+        turn_num = len(conversation)
+        input_ids, target_ids = [], []
+
+        for i in range(turn_num):
+            
+            turn = conversation[i]
+            role = turn['from']
+            
+            if i == 0:
+            
+                assert role == 'human'
+                text = '</Img> ' + turn['value'] + '\n### Assistant: '
+                
+                one_input_id = tokenizer(text, add_special_tokens=False).input_ids
+                input_ids += one_input_id
+                target_ids += [-100] * len(one_input_id)
+                continue
+                            
+            if role == 'human':
+                
+                text = '### Human: ' + turn['value'] + '\n### Assistant: '
+                one_input_id = tokenizer(text, add_special_tokens=False).input_ids
+                input_ids += one_input_id
+                target_ids += [-100] * len(one_input_id)
+            
+            elif role == 'gpt':
+                
+                text = turn['value'] + '\n'
+                one_input_id = tokenizer(text, add_special_tokens=False).input_ids
+                input_ids += one_input_id
+                target_ids += one_input_id
+                            
+        return input_ids, target_ids
+    
+    def process_batch_qa(self, tokenizer, conversations):
         
         batch_input_ids, batch_target_ids = [], []
-        for question, answer in zip(questions, answers):
-            one_input_ids, one_target_ids = self.build_prompt(tokenizer, answer, question)
+        for conversation in conversations:
+            one_input_ids, one_target_ids = self.build_prompt_tune(tokenizer, conversation)
             batch_input_ids.append(torch.LongTensor(one_input_ids))
             batch_target_ids.append(torch.LongTensor(one_target_ids))
         input_ids = rnn.pad_sequence(batch_input_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
@@ -279,7 +339,7 @@ class DaVa(nn.Module):
         bos = torch.ones([batch_size, 1], dtype=input_ids.dtype,
                             device=input_ids.device) * self.tokenizer.bos_token_id  # bsz x 1
 
-        p_before = '###system: You are a helpful and confident chatbot ### Human: <Img>'
+        p_before = '### System: You are a helpful and confident chatbot ### Human: <Img>'
         p_before_tokens = self.tokenizer(p_before, return_tensors="pt", add_special_tokens=False).to(self.device)
 
         bos_embeds = self.phi.model.embed_tokens(bos)  # bsz x 1 x embed_dim

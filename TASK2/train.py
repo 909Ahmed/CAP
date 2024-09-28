@@ -36,7 +36,7 @@ def train_model():
     
     phi_model = get_phi_model()
     model = DaVa(phi_model=phi_model)
-    model.freeze()
+    model.stage = 2
     
     # check out this shit?
     train_num = 10000
@@ -59,6 +59,6 @@ def train_model():
             
             current_step += 1
             if current_step % 1000 == 0:
-                torch.save(agent.model.proj.state_dict(), str(args['save_path_proj'] + f'2{current_step}.pkl'))
+                torch.save(agent.model.proj.state_dict(), str(args['save_path_proj'] + f'{current_step}.pkl'))
 
-    torch.save(agent.model.proj.state_dict(), str(args['save_path_proj'] + '210000.pkl'))
+    torch.save(agent.model.proj.state_dict(), str(args['save_path_proj'] + '10000.pkl'))
