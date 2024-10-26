@@ -1,7 +1,6 @@
 import json
 import requests
 from tqdm import tqdm
-import lzma
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pickle
 
@@ -9,6 +8,7 @@ data_path = './llava_instruct_150k.json'
 
 with open(data_path, 'r') as file:
     dataset = json.load(file)
+    dataset = dataset[:60000]
 
 def process_data(data):
     answer = {}
@@ -32,11 +32,8 @@ with ThreadPoolExecutor(max_workers=100) as executor:
     
     for future in tqdm(as_completed(futures), total=len(futures), desc="Processing data"):
         result = future.result()
-        if result:
-            alls.append(result)
+        if result: alls.append(result)
             
-        if len(alls) % 100 == 0:
-            print(len(alls))
-
-        if len(alls) == 10000:
-            pickle.dump(alls, lzma.open('images.pkl.xz', 'wb'))
+        if len(alls) == 50000:
+            pickle.dump(alls, open('images.pkl', 'wb'))
+            break
