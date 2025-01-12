@@ -37,5 +37,3 @@ The lightweight fine-tuning method LoRA (Low-Rank Adaptation) is employed for ef
 
 ### Notes  
 - Inference code and gradio spaces will be released soon.
----
-Would you like me to refine this further or tailor it to a specific audience?
